@@ -69,13 +69,17 @@ def find_device_in_paths_linux(vid, pid):
     for i2c_device_number in range(99):  # Assuming you have 99 i2c-n devices, adjust as per your setup
         try:
             bus = smbus2.SMBus(i2c_device_number)
-            vid_read = bus.read_byte_data(0x50, 0)  # Replace 0x50 with the appropriate address for VID
-            pid_read = bus.read_byte_data(0x50, 1)  # Replace 0x50 with the appropriate address for PID
+            vid_read = bus.read_byte_data(0x50, 2)
+            vid_read |= bus.read_byte_data(0x50, 3) << 8
+            pid_read = bus.read_byte_data(0x50, 4)
+            pid_read |= bus.read_byte_data(0x50, 5) << 8
             if vid_read == vid and pid_read == pid:
                 print(f"Found matching device at /dev/i2c-{i2c_device_number}")
                 return True, i2c_device_number
             bus.close()
         except FileNotFoundError:
+            pass
+        except OSError:
             pass
     return False
 
@@ -178,6 +182,13 @@ def ftI2cConfig(handle, cfgRate):
 
 
 def ftI2cWrite(handle, i2cDev, flag, data):
+    if platform.uname()[0] == "Windows":
+        return ftI2cWrite_windows(handle, i2cDev, flag, data)
+    else:
+        return ftI2cWrite_linux(handle, i2cDev, flag, data)
+
+
+def ftI2cWrite_windows(handle, i2cDev, flag, data):
     global _callback
 
     if _ftlib is None:
@@ -202,16 +213,42 @@ def ftI2cWrite(handle, i2cDev, flag, data):
 
             _callback(['Write', hex(i2cDev), msg, I2C_Mode_Name(flag), status.value])
 
-
     # We have to cut return buffer at this point because last byte is \0 closing the string
     return ftStatus, dwRealAccessData.value, buffer.raw[:-1], status.value
+
+
+def ftI2cWrite_linux(handle, i2cDev, flag, data):
+    global _callback
+
+    if _ftlib is None:
+        return None
+    # Write data
+    data_int = list(data)
+    if len(data_int) == 1:
+        handle.write_byte(i2cDev, data_int[0])
+    elif len(data_int) == 2:
+        handle.write_byte_data(i2cDev, data_int[0], data_int[1])
+    else:
+        raise ArgumentError("Data length must be 1")
+
+    if _callback is not None:
+        unpackstr = "<" + "B" * len(data)
+        writetuple = struct.unpack(unpackstr, data)
+        msg =""
+        for i in writetuple:
+            msg += hex(i) + " "
+
+        _callback(['Write', hex(i2cDev), msg, "", 0])
+
+    # We have to cut return buffer at this point because last byte is \0 closing the string
+    return 0, len(data), data, 0
 
 
 def ftI2cRead(handle, i2cDev, flag, readLen):
     if platform.uname()[0] == "Windows":
         return ftI2cRead_windows(handle, i2cDev, flag, readLen)
     else:
-        return ftI2cRead_linux(handle, i2cDev, flag, readLen)
+        return ftI2cRead_linux(handle, i2cDev, readLen)
 
 def ftI2cRead_windows(handle, i2cDev, flag, readLen):
     """
@@ -247,7 +284,7 @@ def ftI2cRead_windows(handle, i2cDev, flag, readLen):
     # We have to cut return buffer at this point because last byte is \0 closing the string
     return ftStatus, dwRealAccessData.value, buffer.raw[:-1], status.value
 
-def ftI2cRead_linux(handle, i2cDev, flag, readLen):
+def ftI2cRead_linux(handle, i2cDev, readLen):
     """
     Read data
     :param handle:
@@ -265,16 +302,18 @@ def ftI2cRead_linux(handle, i2cDev, flag, readLen):
         raise ArgumentError("readLen must be 1")
 
     byte = handle.read_byte(i2cDev)
+    byte = int.to_bytes(byte, 1, 'big')
 
     # Logging block. If enabled, data is valid and there is data
     if _callback is not None:
-        unpackstr = "<" + "B" * dwRealAccessData.value
-        readtuple = struct.unpack(unpackstr, buffer.raw[:dwRealAccessData.value])
+        unpackstr = "<" + "B" * len(byte)
+        readtuple = struct.unpack(unpackstr, byte)
         msg = ""
         for i in readtuple:
             msg += hex(i) + " "
 
-        _callback(['Read', hex(i2cDev), byte, "", 0])
+
+        _callback(['Read', hex(i2cDev), msg, "", 0])
 
     return 0, 1, byte, 0
 

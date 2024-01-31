@@ -381,7 +381,7 @@ class _PSDistCtrlFrame(tk.Frame):
         ft.ftI2cWrite(config.i2c_handle,
                       dev_addr,
                       FT260_I2C_FLAG.FT260_I2C_START,
-                      int.to_bytes(reg_addr))
+                      int.to_bytes(reg_addr, 1, 'big'))
         # Register address is send. Can now retrieve register data
         (ft_status, data_real_read_len, readData, status) = ft.ftI2cRead(config.i2c_handle,
                                                                          dev_addr,
@@ -397,7 +397,7 @@ class _PSDistCtrlFrame(tk.Frame):
         else:
             error = False
         if not len(readData) == 0:
-            reg_val = int.from_bytes(readData)
+            reg_val = int.from_bytes(readData, 'big')
         else:
             reg_val = None
         return reg_val, error
