@@ -1,5 +1,6 @@
 from ft_function import *
 import struct
+import platform
 
 _callback = None
 _ftlib = None
@@ -8,7 +9,10 @@ _ftlib = None
 def open_ftlib():
     global _ftlib
     if _ftlib is None:
-        _ftlib = FTlib("lib/LibFT260.dll")
+        if platform.uname()[0] == "Windows":
+            _ftlib = FTlib("lib/LibFT260.dll")
+        else:
+            _ftlib = []
 
 
 def close_device(i2c_handle):

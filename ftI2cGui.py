@@ -6,6 +6,7 @@ import struct
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.scrolledtext as tkst
+from tkinter import font
 
 FT260_Vid = 0x0403
 FT260_Pid = 0x6030
@@ -34,28 +35,23 @@ class _ConfigFrame(tk.Frame):
     def open(self):
         ft.open_ftlib()
         if self.i2c_handle is not None:
-            raise Exception("Device already opened. Action to open it twice should be disabled.")
+            raise Exception("Device already opened. Action to open it twice should be disabled")
 
         if not ft.find_device_in_paths(FT260_Vid, FT260_Pid):
-            self.entry_scroll_message.delete("1.0", tk.END)
-            self.entry_scroll_message.insert("1.0", """No FT260 Device found. Was looking USB devices by VID/PID combination and didn't find any. 
-Did you forget to connect FT260 chip to USB?
-Did you install the driver?
-Do you see FT260 in device list?"""
-                                             )
-            return
+            self.msg_error("No FT260 device found. Check USB connection")
+            return True
 
         self.i2c_handle = ft.openFtAsI2c(FT260_Vid, FT260_Pid, int(self.clock))
 
         if self.i2c_handle is None:
-            self.entry_scroll_message.delete("1.0", tk.END)
-            self.entry_scroll_message.insert("1.0", "Open I2C error. Was opening FT260 in I2C mode and failed.")
-            return
+            self.msg_error("Error opening I2C")
+            return True
 
         self.button_open.config(state="disable")
         self.entry_clock.config(state="disable")
         self.button_close.config(state="normal")
-        self.entry_scroll_message.delete("1.0", tk.END)
+        self.msg_info("FT260 opened correctly")
+        return False
 
     def close(self):
         if self.i2c_handle is not None:
@@ -64,8 +60,25 @@ Do you see FT260 in device list?"""
             self.button_open.config(state="normal")
             self.entry_clock.config(state="normal")
             self.button_close.config(state="disable")
+            self.msg_info("FT260 closed correctly")
         else:
             raise Exception("Device is not opened. Action to close it twice should be disabled.")
+
+    def add_status_msg(self, lvl, msg):
+        self.entry_scroll_message.configure(state="normal")
+        t = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.entry_scroll_message.insert(tk.INSERT, "\n" + t + " " + lvl + ": " + msg)
+        self.entry_scroll_message.configure(state="disabled")
+        self.entry_scroll_message.see("end")
+
+    def msg_info(self, msg):
+        self.add_status_msg("INFO", msg)
+
+    def msg_warning(self, msg):
+        self.add_status_msg("WARNING", msg)
+
+    def msg_error(self, msg):
+        self.add_status_msg("ERROR", msg)
 
     def __del__(self):
         if self.i2c_handle is not None:
@@ -83,7 +96,8 @@ Do you see FT260 in device list?"""
         self.entry_address = tk.Entry(self, width=6)
         self.button_open = tk.Button(self, text="Open device", command=self.open)
         self.button_close = tk.Button(self, text="Close device", command=self.close, state="disabled")
-        self.entry_scroll_message = tkst.ScrolledText(self, height="3", width="20")
+        self.entry_scroll_message = tkst.ScrolledText(
+            self, height="3", width="20", wrap=tk.WORD, font=font.nametofont("TkDefaultFont"))
         label_msb_warning = tk.Label(self, text="Multiple bytes are send and read as MSByte first, LSByte last.")
 
         label_clock.grid(row=0, column=0, padx=(3, 0))
@@ -358,6 +372,224 @@ class _DataFrame(tk.Frame):
         self.word_symbol = {1: "B", 2: "H", 4: "I"}
 
 
+class _PSDistCtrlFrame(tk.Frame):
+    global config
+
+    def read_reg(self, dev_addr, reg_addr):
+        if config.i2c_handle is None:
+            return
+        ft.ftI2cWrite(config.i2c_handle,
+                      dev_addr,
+                      FT260_I2C_FLAG.FT260_I2C_START,
+                      int.to_bytes(reg_addr))
+        # Register address is send. Can now retrieve register data
+        (ft_status, data_real_read_len, readData, status) = ft.ftI2cRead(config.i2c_handle,
+                                                                         dev_addr,
+                                                                         FT260_I2C_FLAG.FT260_I2C_START_AND_STOP,
+                                                                         1)
+        error = True
+        if data_real_read_len != len(readData):
+            self.msg_error(
+                "Read {} bytes from ft260 lib, but {} bytes are in buffer. ft_status {}, status 0x{:X}".format(
+                    data_real_read_len, len(readData), ft_status, status))
+        elif not ft_status == FT260_STATUS.FT260_OK.value:
+            self.msg_error("Read error : %s\r\n" % ft_status)
+        else:
+            error = False
+        if not len(readData) == 0:
+            reg_val = int.from_bytes(readData)
+        else:
+            reg_val = None
+        return reg_val, error
+
+    def write_reg(self, dev_addr, reg_addr, reg_val):
+        if config.i2c_handle is None:
+            return
+        (ft_status, data_real_write_len, writeData, status) = ft.ftI2cWrite(
+            config.i2c_handle, dev_addr, FT260_I2C_FLAG.FT260_I2C_START_AND_STOP, bytes(bytearray((reg_addr, reg_val))))
+        error = True
+        if data_real_write_len != len(writeData):
+            self.msg_error(
+                "Wrote {} bytes from ft260 lib, but {} bytes are in buffer. ft_status {}, status 0x{:X}".format(
+                    data_real_write_len, len(writeData), ft_status, status))
+        elif not ft_status == FT260_STATUS.FT260_OK.value:
+            self.msg_error("Read error : %s\r\n" % ft_status)
+        else:
+            error = False
+        return error
+
+    def write_verify_reg (self, dev_addr, reg_addr, reg_val):
+        error = self.write_reg(dev_addr, reg_addr, reg_val)
+        if error:
+            self.msg_error("Error writing register 0x{:X} on device 0x{:X}".format(reg_addr, dev_addr))
+            return True
+        (reg_val_read, error) = self.read_reg(dev_addr, reg_addr)
+        if error:
+            self.msg_error("Error reading register 0x{:X} on device 0x{:X}".format(reg_addr, dev_addr))
+            return True
+        else:
+            if reg_val_read != reg_val:
+                self.msg_error("Error verifying register 0x{:X} on device 0x{:X}. Wrote 0x{:X}. got 0x{:X}".format(
+                    reg_addr, dev_addr, reg_val, reg_val_read))
+                return True
+        return False
+
+    def init(self):
+        init_map = ((0x20, 0x2, 0xff), (0x20, 0x6, 0xc0),
+                    (0x20, 0x3, 0xff), (0x20, 0x7, 0xc0),
+                    (0x21, 0x2, 0xff), (0x21, 0x6, 0xc0))
+        for i in range(len(init_map)):
+            dev = init_map[i][0]
+            reg = init_map[i][1]
+            val = init_map[i][2]
+            error = self. write_verify_reg(dev, reg, val)
+            if error:
+                self.msg_error("Error during init")
+                self.init_status.configure(background="red", text="Failed")
+                return True
+        self.msg_info("Initialization successful")
+        self.init_status.configure(background="green", text="Success")
+        self.ru_all_on_off(False)
+        return False
+
+    def ru_on_off(self, on, ps, ru):
+        self.msg_info("Setting PS{} switch of RU{} to {}".format(ps, ru, "ON" if on else "OFF"))
+        map_dev_ps = (0x20, 0x20, 0x21)
+        map_reg_ps = (0x02, 0x03, 0x02)
+        dev = map_dev_ps[ps]
+        reg = map_reg_ps[ps]
+        (val, error) = self.read_reg(dev, reg)
+        if error:
+            self.msg_error("Error while reading output register. PS{} RU{}".format(ps, ru))
+            return error
+        if ru == 0:
+            list_ru = range(self.ru_n)
+        else:
+            list_ru = range(ru-1, ru)
+        for i in list_ru:
+            if on:
+                val &= ~(0x1 << i)
+            else:
+                val |= 0x1 << i
+        error = self.write_verify_reg(dev, reg, val)
+        if error:
+            self.msg_error("Error during RU on/off command. PS{} RU{} - ON = {}".format(ps, ru, on))
+        if ps == 2:
+            (latch_val, error) = self.read_reg(0x21, 0x1)
+            if error:
+                self.msg_error("Error reading latched value")
+                return error
+            if (latch_val & 0x3F) != (~val & 0x3F):
+                self.msg_warning("Power supply is on, cannot switch on/off")
+        else:
+            latch_val = ~val
+        for i in list_ru:
+            if error:
+                color = "red"
+                text = "Error"
+            elif (latch_val >> i) & 1:
+                color = "green"
+                text = "On"
+            else:
+                color = "yellow"
+                text = "Off"
+            self.status_ru[ps][i+1].configure(background=color, text=text)
+        self.msg_info("PS{} switch of RU{} correctly set to {}".format(ps, ru, "ON" if on else "OFF"))
+        return error
+
+    def ru_all_on_off(self, on):
+        for ps in range(3):
+            self.ru_on_off(on, ps, 0)
+
+    def btn(self, on, ps, ru):
+        if on:
+            btn_text = "ON"
+            col = 0
+        else:
+            btn_text = "OFF"
+            col = 1
+        btn = tk.Button(self, text=btn_text, command=lambda: self.ru_on_off(on, ps, ru))
+        btn.grid(row=4+ru, column=1+col+self.main_col*ps, sticky="nsew")
+
+    def add_status_msg(self, lvl, msg):
+        self.status_msg_text.configure(state="normal")
+        t = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.status_msg_text.insert(tk.INSERT, "\n" + t + " " + lvl + ": " + msg)
+        self.status_msg_text.configure(state="disabled")
+        self.status_msg_text.see("end")
+
+    def msg_info(self, msg):
+        self.add_status_msg("INFO", msg)
+
+    def msg_warning(self, msg):
+        self.add_status_msg("WARNING", msg)
+
+    def msg_error(self, msg):
+        self.add_status_msg("ERROR", msg)
+
+    def __init__(self, parent):
+        self.parent = parent
+        super().__init__(self.parent)
+        self.config(pady=5)
+        col_width = (1, 1, 1, 1)
+        self.main_col = len(col_width)
+        for i in range(3):
+            for j in range(len(col_width)):
+                self.grid_columnconfigure(4*i+j, weight=col_width[j])
+
+        self.button_init = tk.Button(self, text="Init board", command=self.init)
+        label_init_status = tk.Label(self, text="Init status")
+        self.init_status = tk.Label(self, text="Not init", background="red")
+
+        self.status_msg_text = tkst.ScrolledText(
+            self, height="5", width="20", wrap=tk.WORD, font=font.nametofont("TkDefaultFont"))
+
+        label_bpol = tk.Label(self, text="bPOL12V PS control")
+        label_tec = tk.Label(self, text="TEC PS control")
+        label_aldo = tk.Label(self, text="ALDO PS control")
+
+        self.label_ru = []
+        self.status_ru = []
+        row_str = ["ALL RU"]
+        self.ru_n = 6
+        for i in range(self.ru_n):
+            row_str.append("RU{:1d}".format(i+1))
+        for j in range(3):
+            self.label_ru.append([])
+            self.status_ru.append([])
+            for i in range(self.ru_n+1):
+                self.label_ru[j].append(tk.Label(self, text=row_str[i]))
+                self.label_ru[j][-1].grid(row=4+i, column=0+j*self.main_col, sticky="nsew")
+                self.btn(True, j, i)
+                self.btn(False, j, i)
+                if i == 0:
+                    str_status = "Status"
+                    bg = parent.cget("background")
+                else:
+                    str_status = "Unknown"
+                    bg = 'orange'
+                self.status_ru[j].append(tk.Label(self, text=str_status, background=bg))
+                self.status_ru[j][-1].grid(row=4+i, column=3+self.main_col*j, sticky="nsew")
+
+        self.button_init.grid(row=0, column=0, columnspan=self.main_col, sticky="nsew")
+        label_init_status.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        self.init_status.grid(row=1, column=2, columnspan=2, sticky="nsew")
+
+        label_all = tk.Label(self, text="ALL PS&RU")
+        label_all.grid(row=2, column=0, sticky="nsew")
+        button_all_on = tk.Button(self, text="ON", command=lambda: self.ru_all_on_off(True))
+        button_all_on.grid(row=2, column=1, sticky="nsew")
+        button_all_off = tk.Button(self, text="OFF", command=lambda: self.ru_all_on_off(False))
+        button_all_off.grid(row=2, column=2, sticky="nsew")
+
+        label_bpol.grid(row=3, column=0, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+        label_tec.grid(row=3, column=self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+        label_aldo.grid(row=3, column=2*self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+
+        self.status_msg_text.grid(
+            row=0, column=self.main_col, columnspan=2*self.main_col, rowspan=3, sticky="nsew", padx=5)
+
+
 class _CommLog(tk.Frame):
     """
     Communication log for USB-I2C messages
@@ -420,10 +652,10 @@ def main():
     global config
 
     parent = tk.Tk()
-    parent.title("FT260 I2C")
+    parent.title("CMS BTL Power Supply Distribution Control")
     config = _ConfigFrame(parent)
-    config.clock = "100"
-    config.slave_address = "0x68"
+    config.clock = "400"
+    config.slave_address = "0x7f"
     config.pack(fill="x", expand=False)
     separator = ttk.Separator(parent, orient=tk.HORIZONTAL)
     separator.pack(fill="x")
@@ -436,12 +668,14 @@ def main():
     reg.register_address = "0x00"
     separator = ttk.Separator(parent, orient=tk.HORIZONTAL)
     separator.pack(fill="x")
-    data = _DataFrame(parent)
-    data.data_size = 1
-    data.pack(fill="x")
+    ctrl = _PSDistCtrlFrame(parent)
+    ctrl.pack(fill="x")
     comm_log = _CommLog(parent)
     comm_log.pack(fill="both", expand=True)
     ft._callback = comm_log.add_new_log_entry
+    error = config.open()
+    if not error:
+        ctrl.init()
     parent.mainloop()
 
 

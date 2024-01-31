@@ -8,7 +8,7 @@ from enum import *
 
 class FTlib:
     def __init__(self, libpath):
-        self.ftlib = windll.LoadLibrary(libpath)
+        self.ftlib = cdll.LoadLibrary(libpath)
         # FT260 General Functions
         self.ftCreateDeviceList = self.ftlib.FT260_CreateDeviceList
         self.ftCreateDeviceList.argtypes = [POINTER(c_ulong)]
