@@ -37,6 +37,7 @@ The GUI is build with tkinter library.
 ## Run Gui
 
 * `pip install tkinter`
+* `pip install smbus2` (Linux only)
 * `python ftI2cGui.py`
 
 ## GUI example
