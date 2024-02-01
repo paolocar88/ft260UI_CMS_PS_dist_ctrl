@@ -1,7 +1,8 @@
 from ft_function import *
 import struct
 import platform
-import smbus2
+if platform.uname()[0] == "Linux":
+    import smbus2
 
 _callback = None
 _ftlib = None

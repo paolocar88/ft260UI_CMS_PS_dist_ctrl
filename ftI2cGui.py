@@ -472,6 +472,7 @@ class _PSDistCtrlFrame(tk.Frame):
             else:
                 val |= 0x1 << i
         error = self.write_verify_reg(dev, reg, val)
+        warning = False
         if error:
             self.msg_error("Error during RU on/off command. PS{} RU{} - ON = {}".format(ps, ru, on))
         if ps == 2:
@@ -480,7 +481,9 @@ class _PSDistCtrlFrame(tk.Frame):
                 self.msg_error("Error reading latched value")
                 return error
             if (latch_val & 0x3F) != (~val & 0x3F):
-                self.msg_warning("Power supply is on, cannot switch on/off")
+                self.msg_warning("ALDO input power supply is on, cannot change switch settings")
+                self.msg_warning("First switch off the input power supply, then change switch settings")
+                warning = True
         else:
             latch_val = ~val
         for i in list_ru:
@@ -494,7 +497,8 @@ class _PSDistCtrlFrame(tk.Frame):
                 color = "yellow"
                 text = "Off"
             self.status_ru[ps][i+1].configure(background=color, text=text)
-        self.msg_info("PS{} switch of RU{} correctly set to {}".format(ps, ru, "ON" if on else "OFF"))
+        if not warning:
+            self.msg_info("PS{} switch of RU{} correctly set to {}".format(ps, ru, "ON" if on else "OFF"))
         return error
 
     def ru_all_on_off(self, on):
@@ -514,7 +518,7 @@ class _PSDistCtrlFrame(tk.Frame):
     def add_status_msg(self, lvl, msg):
         self.status_msg_text.configure(state="normal")
         t = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.status_msg_text.insert(tk.INSERT, "\n" + t + " " + lvl + ": " + msg)
+        self.status_msg_text.insert(tk.INSERT, "\n" + t + " " + lvl + ": " + msg, lvl)
         self.status_msg_text.configure(state="disabled")
         self.status_msg_text.see("end")
 
@@ -588,6 +592,10 @@ class _PSDistCtrlFrame(tk.Frame):
 
         self.status_msg_text.grid(
             row=0, column=self.main_col, columnspan=2*self.main_col, rowspan=3, sticky="nsew", padx=5)
+
+        self.status_msg_text.tag_config("INFO", foreground="black")
+        self.status_msg_text.tag_config("WARNING", foreground="purple")
+        self.status_msg_text.tag_config("ERROR", foreground="red")
 
 
 class _CommLog(tk.Frame):
