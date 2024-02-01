@@ -2,9 +2,11 @@
 
 This GUI provides manual control over FT260 chip acting as USB to I2C master converter.
 The FT260 is mounted on the CMS BTL power supply distribution control and is interfaced with two PCA9555 GPIO expanders.
+
 The board is used to selectively power on/off the supplies of each (out of 6) Readout Unit (RU).
+
 The power supplies are 3 (current consumption per RU):
-* bPOL12V supply: 11 V, 4 A 
+* bPOL12V supply: <12 V, 4 A 
 * TEC supply: max 32 V, 1 A
 * ALDO supply: max 48 V, 0.1 A
 
@@ -26,7 +28,9 @@ An standalone executable can be easily build with PyInstaller.
 ## Functionality (CMS BTL PS distribution board control)
 
 The `Init board` button initializes the settings of the PCA9555s and sets the default of each channel to `off`.
-The individual (`RUn`) `ON` or `OFF` buttons configure the corresponding switch.
+
+The individual (`RU#`) `ON` or `OFF` buttons configure the corresponding switch.
+
 The general `ALL PS&RU` and `ALL PS&RU` buttons configure all switches on the board, or all switches on a specific
 power supply.
 
