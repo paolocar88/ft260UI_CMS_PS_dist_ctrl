@@ -548,9 +548,9 @@ class _PSDistCtrlFrame(tk.Frame):
         self.status_msg_text = tkst.ScrolledText(
             self, height="5", width="20", wrap=tk.WORD, font=font.nametofont("TkDefaultFont"))
 
-        label_b_pol = tk.Label(self, text="bPOL12V PS control")
-        label_tec = tk.Label(self, text="TEC PS control")
-        label_aldo = tk.Label(self, text="ALDO PS control")
+        label_b_pol = tk.Label(self, text="bPOL12V PS control (PS0)")
+        label_tec = tk.Label(self, text="TEC PS control (PS1)")
+        label_aldo = tk.Label(self, text="ALDO PS control (PS2)")
 
         self.label_ru = []
         self.status_ru = []
