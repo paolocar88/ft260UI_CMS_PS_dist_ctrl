@@ -165,8 +165,10 @@ class _RegFrame(tk.Frame):
                                                                          self.register_size)
         if data_real_read_len != len(readData):
             print("Read {} bytes from ft260 lib, but {} bytes are in buffer".format(data_real_read_len, len(readData)))
-        elif not ft_status == FT260_STATUS.FT260_OK.value:
-            print("Read error : %s\r\n" % ft_status)
+
+        if not ft_status == FT260_STATUS.FT260_OK.value:
+            print("Read error : %s" % ft_status)
+
         if not len(readData) == 0:
             self.register_value = "%#x" % struct.unpack("".join(unpack_str), readData)
 
@@ -333,8 +335,8 @@ class _DataFrame(tk.Frame):
         if data_real_read_len != len(readData):
             print("Read {} bytes from ft260 lib, but {} bytes are in buffer".format(data_real_read_len,
                                                                                     len(readData)))
-        elif not ft_status == FT260_STATUS.FT260_OK.value:
-            print("Read error : %s\r\n" % ft_status)
+        if not ft_status == FT260_STATUS.FT260_OK.value:
+            print("Read error : %s" % ft_status)
 
         unpack_str = ">" + self.word_symbol[self.data_word] * int(len(readData) / self.data_word)
         update_str = ""
@@ -385,15 +387,16 @@ class _PSDistCtrlFrame(tk.Frame):
                                                                          dev_addr,
                                                                          FT260_I2C_FLAG.FT260_I2C_START_AND_STOP,
                                                                          1)
-        error = True
+        error = False
         if data_real_read_len != len(readData):
             self.msg_error(
-                "Read {} bytes from ft260 lib, but {} bytes are in buffer. ft_status {}, status 0x{:X}".format(
-                    data_real_read_len, len(readData), ft_status, status))
-        elif not ft_status == FT260_STATUS.FT260_OK.value:
-            self.msg_error("Read error : %s\r\n" % ft_status)
-        else:
-            error = False
+                "Read {} bytes from ft260 lib, but {} bytes are in buffer".format(
+                    data_real_read_len, len(readData)))
+            error = True
+        if not ft_status == FT260_STATUS.FT260_OK.value:
+            self.msg_error("FTLib status: {}, FT260 status: 0x{:X}".format(ft_status, status))
+            error = True
+
         if not len(readData) == 0:
             reg_val = int.from_bytes(readData, 'big')
         else:
@@ -412,7 +415,7 @@ class _PSDistCtrlFrame(tk.Frame):
                 "Wrote {} bytes from ft260 lib, but {} bytes are in buffer. ft_status {}, status 0x{:X}".format(
                     data_real_write_len, len(writeData), ft_status, status))
         elif not ft_status == FT260_STATUS.FT260_OK.value:
-            self.msg_error("Read error : %s\r\n" % ft_status)
+            self.msg_error("Write error : %s" % ft_status)
         else:
             error = False
         return error

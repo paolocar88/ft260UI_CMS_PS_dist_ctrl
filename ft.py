@@ -1,6 +1,7 @@
 from ft_function import *
 import struct
 import platform
+import time
 if platform.uname()[0] == "Linux":
     import smbus2
 
@@ -23,7 +24,6 @@ def close_device(i2c_handle):
             _ftlib.ftClose(i2c_handle)
         else:
             i2c_handle.close()
-
 
 
 def find_device_in_paths(vid, pid):
@@ -133,14 +133,13 @@ def openFtAsI2c_windows(Vid, Pid, cfgRate):
 
     return handle
 
+
 def openFtAsI2c_linux(Vid, Pid):
     """
     Tries to open FY260 device by its VID and PID. Also initialize it with I2C speed defined by rate.
     Returns device handle.
     :param Vid: Vendor ID of the USB chip. For FT260 it is 0x0403
     :param Pid: Product ID of the USB chip. For FT260_it is 0x6030
-    :param cfgRate: speed of connection in kbots. 100 and 400 are mostly used in I2C devices, though higher values are
-    also possible.
     :return: handle for opened device. Handle must be stored for future use.
     """
     if _ftlib is None:
@@ -155,7 +154,8 @@ def openFtAsI2c_linux(Vid, Pid):
     print("I2c Init OK")
     return handle
 
-def I2C_Mode_Name(flag :FT260_I2C_FLAG):
+
+def I2C_Mode_Name(flag: FT260_I2C_FLAG):
     Dict = {FT260_I2C_FLAG.FT260_I2C_NONE: 'None',
             FT260_I2C_FLAG.FT260_I2C_REPEATED_START: 'Repeated start',
             FT260_I2C_FLAG.FT260_I2C_START_AND_STOP: 'Start&stop',
@@ -163,6 +163,7 @@ def I2C_Mode_Name(flag :FT260_I2C_FLAG):
             FT260_I2C_FLAG.FT260_I2C_STOP: 'Stop'
             }
     return Dict[flag]
+
 
 def ftI2cConfig(handle, cfgRate):
     """
@@ -186,7 +187,7 @@ def ftI2cWrite(handle, i2cDev, flag, data):
     if platform.uname()[0] == "Windows":
         return ftI2cWrite_windows(handle, i2cDev, flag, data)
     else:
-        return ftI2cWrite_linux(handle, i2cDev, flag, data)
+        return ftI2cWrite_linux(handle, i2cDev, data)
 
 
 def ftI2cWrite_windows(handle, i2cDev, flag, data):
@@ -200,7 +201,13 @@ def ftI2cWrite_windows(handle, i2cDev, flag, data):
     buffer = create_string_buffer(data)
     buffer_void = cast(buffer, c_void_p)
     ftStatus = _ftlib.ftI2CMaster_Write(handle, i2cDev, flag, buffer_void, len(data), byref(dwRealAccessData))
-    _ftlib.ftI2CMaster_GetStatus(handle, byref(status))
+    cnt_ret = 0
+    while cnt_ret < 10:
+        _ftlib.ftI2CMaster_GetStatus(handle, byref(status))
+        if (status.value & 0x20) != 0 or flag == FT260_I2C_FLAG.FT260_I2C_START :
+            break
+        time.sleep(0.0001)
+        cnt_ret += 1
     if not ftStatus == FT260_STATUS.FT260_OK.value:
         print("I2c Write NG : %s\r\n" % FT260_STATUS(ftStatus))
     else:
@@ -208,17 +215,17 @@ def ftI2cWrite_windows(handle, i2cDev, flag, data):
         if _callback is not None and dwRealAccessData.value > 0:
             unpackstr = "<" + "B" * dwRealAccessData.value
             writetuple = struct.unpack(unpackstr, buffer.raw[:dwRealAccessData.value])
-            msg =""
+            msg = ""
             for i in writetuple:
                 msg += hex(i) + " "
 
-            _callback(['Write', hex(i2cDev), msg, I2C_Mode_Name(flag), status.value])
+            _callback(['Write', hex(i2cDev), msg, I2C_Mode_Name(flag), hex(status.value)])
 
     # We have to cut return buffer at this point because last byte is \0 closing the string
     return ftStatus, dwRealAccessData.value, buffer.raw[:-1], status.value
 
 
-def ftI2cWrite_linux(handle, i2cDev, flag, data):
+def ftI2cWrite_linux(handle, i2cDev, data):
     global _callback
 
     if _ftlib is None:
@@ -235,11 +242,11 @@ def ftI2cWrite_linux(handle, i2cDev, flag, data):
     if _callback is not None:
         unpackstr = "<" + "B" * len(data)
         writetuple = struct.unpack(unpackstr, data)
-        msg =""
+        msg = ""
         for i in writetuple:
             msg += hex(i) + " "
 
-        _callback(['Write', hex(i2cDev), msg, "", 0])
+        _callback(['Write', hex(i2cDev), msg, "", hex(0)])
 
     # We have to cut return buffer at this point because last byte is \0 closing the string
     return 0, len(data), data, 0
@@ -250,6 +257,7 @@ def ftI2cRead(handle, i2cDev, flag, readLen):
         return ftI2cRead_windows(handle, i2cDev, flag, readLen)
     else:
         return ftI2cRead_linux(handle, i2cDev, readLen)
+
 
 def ftI2cRead_windows(handle, i2cDev, flag, readLen):
     """
@@ -264,12 +272,12 @@ def ftI2cRead_windows(handle, i2cDev, flag, readLen):
 
     if _ftlib is None:
         return None
-    dwRealAccessData = c_ulong(0) # Create variable to store received bytes
-    status = c_uint8(0) # To store status after operation
-    buffer = create_string_buffer(readLen + 1) # Create string to hold received data with additional terminating byte
-    buffer_void = cast(buffer, c_void_p) # Convert the same buffer to void pointer
+    dwRealAccessData = c_ulong(0)               # Create variable to store received bytes
+    status = c_uint8(0)                         # To store status after operation
+    buffer = create_string_buffer(readLen + 1)  # Create string to hold received data with additional terminating byte
+    buffer_void = cast(buffer, c_void_p)        # Convert the same buffer to void pointer
 
-    ftStatus = _ftlib.ftI2CMaster_Read(handle, i2cDev, flag, buffer_void, readLen, byref(dwRealAccessData))
+    ftStatus = _ftlib.ftI2CMaster_Read(handle, i2cDev, flag, buffer_void, readLen, byref(dwRealAccessData), 200)
     _ftlib.ftI2CMaster_GetStatus(handle, byref(status))
 
     # Logging block. If enabled, data is valid and there is data
@@ -280,17 +288,17 @@ def ftI2cRead_windows(handle, i2cDev, flag, readLen):
         for i in readtuple:
             msg += hex(i) + " "
 
-        _callback(['Read', hex(i2cDev), msg, I2C_Mode_Name(flag), status.value])
+        _callback(['Read', hex(i2cDev), msg, I2C_Mode_Name(flag), hex(status.value)])
 
     # We have to cut return buffer at this point because last byte is \0 closing the string
     return ftStatus, dwRealAccessData.value, buffer.raw[:-1], status.value
+
 
 def ftI2cRead_linux(handle, i2cDev, readLen):
     """
     Read data
     :param handle:
     :param i2cDev:
-    :param flag:
     :param readLen:
     :return:
     """
@@ -313,8 +321,7 @@ def ftI2cRead_linux(handle, i2cDev, readLen):
         for i in readtuple:
             msg += hex(i) + " "
 
-
-        _callback(['Read', hex(i2cDev), msg, "", 0])
+        _callback(['Read', hex(i2cDev), msg, "", hex(0)])
 
     return 0, 1, byte, 0
 
@@ -323,7 +330,6 @@ def openFtAsUart(Vid, Pid):
     if _ftlib is None:
         return None
 
-    ftStatus = c_int(0)
     handle = c_void_p()
 
     # mode 0 is I2C, mode 1 is UART
@@ -353,7 +359,8 @@ def openFtAsUart(Vid, Pid):
     _ftlib.ftUART_SetFlowControl(handle, FT260_UART_Mode.FT260_UART_XON_XOFF_MODE)
     ulBaudrate = c_ulong(9600)
     _ftlib.ftUART_SetBaudRate(handle, ulBaudrate)
-    _ftlib.ftUART_SetDataCharacteristics(handle, FT260_Data_Bit.FT260_DATA_BIT_8, FT260_Stop_Bit.FT260_STOP_BITS_1, FT260_Parity.FT260_PARITY_NONE)
+    _ftlib.ftUART_SetDataCharacteristics(
+        handle, FT260_Data_Bit.FT260_DATA_BIT_8, FT260_Stop_Bit.FT260_STOP_BITS_1, FT260_Parity.FT260_PARITY_NONE)
     _ftlib.ftUART_SetBreakOff(handle)
 
     uartConfig = UartConfig()
@@ -362,7 +369,8 @@ def openFtAsUart(Vid, Pid):
         print("UART Get config NG : %s\r\n" % FT260_STATUS(ftStatus))
     else:
         print("config baud:%ld, ctrl:%d, data_bit:%d, stop_bit:%d, parity:%d, breaking:%d\r\n" % (
-            uartConfig.baud_rate, uartConfig.flow_ctrl, uartConfig.data_bit, uartConfig.stop_bit, uartConfig.parity, uartConfig.breaking))
+            uartConfig.baud_rate, uartConfig.flow_ctrl, uartConfig.data_bit, uartConfig.stop_bit, uartConfig.parity,
+            uartConfig.breaking))
     return handle
 
 
@@ -371,16 +379,15 @@ def ftUartWrite(handle):
         return None
     # Write data
     while True:
-        str = input("> ")
+        str_ = input("> ")
         dwRealAccessData = c_ulong(0)
-        bufferData = c_char_p(bytes(str,'utf-8'))
+        bufferData = c_char_p(bytes(str_, 'utf-8'))
         buffer = cast(bufferData, c_void_p)
-        ftStatus = _ftlib.ftUART_Write(handle, buffer, len(str), len(str), byref(dwRealAccessData))
+        ftStatus = _ftlib.ftUART_Write(handle, buffer, len(str_), len(str_), byref(dwRealAccessData))
         if not ftStatus == FT260_STATUS.FT260_OK.value:
             print("UART Write NG : %s\r\n" % FT260_STATUS(ftStatus))
         else:
             print("Write bytes : %d\r\n" % dwRealAccessData.value)
-
 
 
 def ftUartReadLoop(handle):

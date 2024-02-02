@@ -98,7 +98,7 @@ class FTlib:
         self.ftI2CMaster_Init.restype = c_int
 
         self.ftI2CMaster_Read = self.ftlib.FT260_I2CMaster_Read
-        self.ftI2CMaster_Read.argtypes = [c_void_p, c_uint8, FT260_I2C_FLAG, c_void_p, c_ulong, POINTER(c_ulong)]
+        self.ftI2CMaster_Read.argtypes = [c_void_p, c_uint8, FT260_I2C_FLAG, c_void_p, c_ulong, POINTER(c_ulong), c_ulong]
         self.ftI2CMaster_Read.restype = c_int
 
         self.ftI2CMaster_Write = self.ftlib.FT260_I2CMaster_Write
