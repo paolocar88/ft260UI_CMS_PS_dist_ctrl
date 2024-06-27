@@ -455,14 +455,18 @@ class _PSDistCtrlFrame(tk.Frame):
         return False
 
     def ru_on_off(self, on, ps, ru):
-        self.msg_info("Setting PS{} switch of RU{} to {}".format(ps, ru, "ON" if on else "OFF"))
+        if ru == 0:
+            ru_str = "ALL RUs"
+        else:
+            ru_str = "RU{}".format(ru)
+        self.msg_info("Setting PS{} switch of {} to {}".format(ps, ru_str, "ON" if on else "OFF"))
         map_dev_ps = (0x20, 0x20, 0x21)
         map_reg_ps = (0x02, 0x03, 0x02)
         dev = map_dev_ps[ps]
         reg = map_reg_ps[ps]
         (val, error) = self.read_reg(dev, reg)
         if error:
-            self.msg_error("Error while reading output register. PS{} RU{}".format(ps, ru))
+            self.msg_error("Error while reading output register. PS{}".format(ps))
             return error
         if ru == 0:
             list_ru = range(self.ru_n)
@@ -476,9 +480,9 @@ class _PSDistCtrlFrame(tk.Frame):
         error = self.write_verify_reg(dev, reg, val)
         warning = False
         if error:
-            self.msg_error("Error during RU on/off command. PS{} RU{} - ON = {}".format(ps, ru, on))
+            self.msg_error("Error during RU on/off command. PS{} {} - ON = {}".format(ps, ru_str, on))
         if ps == 2:
-            (latch_val, error) = self.read_reg(0x21, 0x1)
+            (latch_val, error) = self.read_reg(dev, 0x1)
             if error:
                 self.msg_error("Error reading latched value")
                 return error
@@ -486,6 +490,9 @@ class _PSDistCtrlFrame(tk.Frame):
                 self.msg_warning("ALDO input power supply is on, cannot change switch settings")
                 self.msg_warning("First switch off the input power supply, then change switch settings")
                 warning = True
+                error = self.write_verify_reg(dev, reg, val & 0xC0 | (~latch_val & 0x3F))
+                if error:
+                    self.msg_error("Error writing back latched value")
         else:
             latch_val = ~val
         for i in list_ru:
@@ -500,7 +507,7 @@ class _PSDistCtrlFrame(tk.Frame):
                 text = "Off"
             self.status_ru[ps][i+1].configure(background=color, text=text)
         if not warning:
-            self.msg_info("PS{} switch of RU{} correctly set to {}".format(ps, ru, "ON" if on else "OFF"))
+            self.msg_info("PS{} switch of {} correctly set to {}".format(ps, ru_str, "ON" if on else "OFF"))
         return error
 
     def ru_all_on_off(self, on):
