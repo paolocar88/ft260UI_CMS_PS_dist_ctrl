@@ -27,7 +27,9 @@ An standalone executable can be easily build with PyInstaller.
 
 ## Functionality (CMS BTL PS distribution board control)
 
-The `Init board` button initializes the settings of the PCA9555s and sets the default of each channel to `off`.
+The `Init board` button initializes the settings of the PCA9555s and reads the current status of the board.
+
+The `Read status` button reads the current status of the switches and updates the GUI accordingly.
 
 The individual (`RU#`) `ON` or `OFF` buttons configure the corresponding switch.
 
