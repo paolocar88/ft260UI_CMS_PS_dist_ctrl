@@ -437,9 +437,10 @@ class _PSDistCtrlFrame(tk.Frame):
         return False
 
     def init(self):
-        init_map = ((0x20, 0x2, 0xff), (0x20, 0x6, 0xc0),
-                    (0x20, 0x3, 0xff), (0x20, 0x7, 0xc0),
-                    (0x21, 0x2, 0xff), (0x21, 0x6, 0xc0))
+        # init_map = ((0x20, 0x2, 0xff), (0x20, 0x6, 0xc0),
+        #             (0x20, 0x3, 0xff), (0x20, 0x7, 0xc0),
+        #             (0x21, 0x2, 0xff), (0x21, 0x6, 0xc0))
+        init_map = ((0x20, 0x6, 0xc0), (0x20, 0x7, 0xc0), (0x21, 0x6, 0xc0))
         for i in range(len(init_map)):
             dev = init_map[i][0]
             reg = init_map[i][1]
@@ -451,8 +452,21 @@ class _PSDistCtrlFrame(tk.Frame):
                 return True
         self.msg_info("Initialization successful")
         self.init_status.configure(background="green", text="Success")
-        self.ru_all_on_off(False)
+        # self.ru_all_on_off(False)
+        self.read_status()
         return False
+
+    def update_status(self, ps, ru, val, error):
+        if error:
+            color = "red"
+            text = "Error"
+        elif (val >> ru) & 1:
+            color = "green"
+            text = "On"
+        else:
+            color = "yellow"
+            text = "Off"
+        self.status_ru[ps][ru+1].configure(background=color, text=text)
 
     def ru_on_off(self, on, ps, ru):
         if ru == 0:
@@ -496,16 +510,7 @@ class _PSDistCtrlFrame(tk.Frame):
         else:
             latch_val = ~val
         for i in list_ru:
-            if error:
-                color = "red"
-                text = "Error"
-            elif (latch_val >> i) & 1:
-                color = "green"
-                text = "On"
-            else:
-                color = "yellow"
-                text = "Off"
-            self.status_ru[ps][i+1].configure(background=color, text=text)
+            self.update_status(ps, i, latch_val, error)
         if not warning:
             self.msg_info("PS{} switch of {} correctly set to {}".format(ps, ru_str, "ON" if on else "OFF"))
         return error
@@ -522,7 +527,25 @@ class _PSDistCtrlFrame(tk.Frame):
             btn_text = "OFF"
             col = 1
         btn = tk.Button(self, text=btn_text, command=lambda: self.ru_on_off(on, ps, ru))
-        btn.grid(row=4+ru, column=1+col+self.main_col*ps, sticky="nsew")
+        btn.grid(row=5+ru, column=1+col+self.main_col*ps, sticky="nsew")
+
+    def read_status(self):
+        map_dev_ps = (0x20, 0x20, 0x21)
+        map_reg_ps = (0x02, 0x03, 0x01)
+        for ps in range(len(map_dev_ps)):
+            dev = map_dev_ps[ps]
+            reg = map_reg_ps[ps]
+            (val, error) = self.read_reg(dev, reg)
+            if ps != 2:
+                val = ~val
+            print(ps, val)
+            if error:
+                self.msg_error("Error while reading register. PS{}".format(ps))
+                return error
+            for ru in range(6):
+                self.update_status(ps, ru, val, error)
+        self.msg_info("Status read successful")
+        return False
 
     def add_status_msg(self, lvl, msg):
         self.status_msg_text.configure(state="normal")
@@ -555,6 +578,8 @@ class _PSDistCtrlFrame(tk.Frame):
         label_init_status = tk.Label(self, text="Init status")
         self.init_status = tk.Label(self, text="Not init", background="red")
 
+        self.button_read = tk.Button(self, text="Read status", command=self.read_status)
+
         self.status_msg_text = tkst.ScrolledText(
             self, height="5", width="20", wrap=tk.WORD, font=font.nametofont("TkDefaultFont"))
 
@@ -573,7 +598,7 @@ class _PSDistCtrlFrame(tk.Frame):
             self.status_ru.append([])
             for i in range(self.ru_n+1):
                 self.label_ru[j].append(tk.Label(self, text=row_str[i]))
-                self.label_ru[j][-1].grid(row=4+i, column=0+j*self.main_col, sticky="nsew")
+                self.label_ru[j][-1].grid(row=5+i, column=0+j*self.main_col, sticky="nsew")
                 self.btn(True, j, i)
                 self.btn(False, j, i)
                 if i == 0:
@@ -583,25 +608,27 @@ class _PSDistCtrlFrame(tk.Frame):
                     str_status = "Unknown"
                     bg = 'orange'
                 self.status_ru[j].append(tk.Label(self, text=str_status, background=bg))
-                self.status_ru[j][-1].grid(row=4+i, column=3+self.main_col*j, sticky="nsew")
+                self.status_ru[j][-1].grid(row=5+i, column=3+self.main_col*j, sticky="nsew")
 
         self.button_init.grid(row=0, column=0, columnspan=self.main_col, sticky="nsew")
         label_init_status.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self.init_status.grid(row=1, column=2, columnspan=2, sticky="nsew")
 
-        label_all = tk.Label(self, text="ALL PS&RU")
-        label_all.grid(row=2, column=0, sticky="nsew")
-        button_all_on = tk.Button(self, text="ON", command=lambda: self.ru_all_on_off(True))
-        button_all_on.grid(row=2, column=1, sticky="nsew")
-        button_all_off = tk.Button(self, text="OFF", command=lambda: self.ru_all_on_off(False))
-        button_all_off.grid(row=2, column=2, sticky="nsew")
+        self.button_read.grid(row=2, column=0, columnspan=self.main_col, sticky="nsew")
 
-        label_b_pol.grid(row=3, column=0, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
-        label_tec.grid(row=3, column=self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
-        label_aldo.grid(row=3, column=2*self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+        label_all = tk.Label(self, text="ALL PS&RU")
+        label_all.grid(row=3, column=0, sticky="nsew")
+        button_all_on = tk.Button(self, text="ON", command=lambda: self.ru_all_on_off(True))
+        button_all_on.grid(row=3, column=1, sticky="nsew")
+        button_all_off = tk.Button(self, text="OFF", command=lambda: self.ru_all_on_off(False))
+        button_all_off.grid(row=3, column=2, sticky="nsew")
+
+        label_b_pol.grid(row=4, column=0, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+        label_tec.grid(row=4, column=self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
+        label_aldo.grid(row=4, column=2*self.main_col, columnspan=self.main_col, padx=(3, 0), sticky="nsew")
 
         self.status_msg_text.grid(
-            row=0, column=self.main_col, columnspan=2*self.main_col, rowspan=3, sticky="nsew", padx=5)
+            row=0, column=self.main_col, columnspan=2*self.main_col, rowspan=4, sticky="nsew", padx=5)
 
         self.status_msg_text.tag_config("INFO", foreground="black")
         self.status_msg_text.tag_config("WARNING", foreground="purple")
